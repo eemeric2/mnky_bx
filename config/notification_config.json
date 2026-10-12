@@ -1,0 +1,25 @@
+
+{
+  "arduino": {
+    "port": "COM4",
+    "baud_rate": 115200,
+    "connection_timeout_s": 5,
+    "max_reward_position": 10,
+    "reward_pulse_duration_ms": 500,
+    "retry_attempts": 3,
+    "retry_delay_ms": 500
+  },
+  "camera": {
+    "index": 0,
+    "width": 640,
+    "height": 480,
+    "fps": 30,
+    "motion_threshold": 5000,
+    "frames_to_stabilize": 30
+  },
+  "timeouts": {
+    "motion_detection_s": 300,
+    "face_detection_s": 10,
+    "button_response_s": 5
+  }
+}

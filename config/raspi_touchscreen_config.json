@@ -1,0 +1,43 @@
+// config/raspi_touchscreen_config.json
+{
+  "kiosk_id": "raspi_kiosk_001",
+  "platform": "raspberry_pi",
+  "input_system": {
+    "enabled_inputs": ["touchscreen"],
+    "arduino": {
+      "port": "/dev/ttyUSB0",
+      "baud_rate": 115200,
+      "connection_timeout_s": 5,
+      "max_reward_position": 10,
+      "reward_pulse_duration_ms": 500,
+      "retry_attempts": 3,
+      "retry_delay_ms": 500
+    },
+    "touchscreen": {
+      "screen_width": 800,
+      "screen_height": 480,
+      "split_screen": true,
+      "debounce_ms": 200,
+      "regions": []
+    }
+  },
+  "display": {
+    "width": 800,
+    "height": 480,
+    "fullscreen": true,
+    "refresh_rate": 60
+  },
+  "camera": {
+    "index": 0,
+    "width": 320,
+    "height": 240,
+    "fps": 15,
+    "motion_threshold": 2000,
+    "frames_to_stabilize": 20
+  },
+  "storage": {
+    "enable_video_encoding": false,
+    "jpeg_quality": 75,
+    "max_session_storage_mb": 250
+  }
+}

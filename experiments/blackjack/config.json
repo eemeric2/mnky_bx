@@ -1,0 +1,57 @@
+{
+  "experiment_name": "Gambling Task",
+  "experiment_version": "1.0",
+  "enable_face_recognition": true,
+  "use_subject_parameters": true,
+  "max_trials": 48,
+  "timing": {
+    "iti_ms": 1000,
+    "max_response_time_ms": 5000,
+    "outcome_display_ms": 1500
+  },
+  "stimulus": {
+    "circle_radius": 100,
+    "colors": {
+      "background": [
+        0,
+        0,
+        0
+      ],
+      "dark_red": [
+        127,
+        0,
+        0
+      ],
+      "dark_orange": [
+        200,
+        75,
+        0
+      ],
+      "gold": [
+        255,
+        215,
+        0
+      ],
+      "green": [
+        0,
+        128,
+        0
+      ],
+      "sky_blue": [
+        0,
+        215,
+        255
+      ],
+      "dark_blue": [
+        0,
+        0,
+        131
+      ],
+      "dark_purple": [
+        48,
+        25,
+        52
+      ]
+    }
+  }
+}

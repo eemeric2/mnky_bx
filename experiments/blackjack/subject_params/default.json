@@ -1,0 +1,8 @@
+{
+  "iti_ms": 1000,
+  "max_response_time_ms": 5000,
+  "trial_difficulty": 2,
+  "reward_magnitude": 5,
+  "reward_type": "juice",
+  "stimulus_size": 100
+}

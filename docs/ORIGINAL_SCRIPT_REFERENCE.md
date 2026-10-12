@@ -40,8 +40,8 @@ This document maps components from the original monolithic script to the new mod
 ### Arduino Integration
 - **Original location**: Lines 500-600
 - **New locations**:
-  - Button handling → `mnky_bx/hardware/arduino_buttons.py`
-  - Reward delivery → `mnky_bx/hardware/arduino_reward.py`
+  - Button handling → `mnky_bx/hardware/arduino/arduino_interface.py`
+  - Reward delivery → `mnky_bx/hardware/arduino/arduino_interface.py`
   - Health monitoring → `mnky_bx/hardware/health_monitor.py`
 
 ### Database Setup

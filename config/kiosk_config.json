@@ -1,0 +1,36 @@
+// mnky_bx/config/kiosk_config.json (UPDATED)
+{
+  "kiosk_id": "kiosk_001",
+  "display": {
+    "width": 1920,
+    "height": 1080,
+    "fullscreen": true,
+    "refresh_rate": 60
+  },
+  "hardware": {
+    "arduino_buttons_port": "COM3",
+    "arduino_reward_port": "COM4",
+    "camera_index": 0,
+    "motion_detection_timeout_s": 300,
+    "face_detection_timeout_s": 10,
+    "motion_threshold": 5000,
+    "frames_to_stabilize": 30
+  },
+  "storage": {
+    "enable_video_encoding": true,
+    "video_quality": "medium",
+    "video_codec": "h265",
+    "jpeg_quality": 85,
+    "cleanup_old_jpegs_after_days": 7,
+    "max_session_storage_mb": 500
+  },
+  "logging": {
+    "level": "DEBUG",
+    "log_directory": "subjects/"
+  },
+  "notifications": {
+    "enabled": true,
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587
+  }
+}

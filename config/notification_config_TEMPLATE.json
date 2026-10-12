@@ -1,0 +1,17 @@
+{
+  "notifications": {
+    "enabled": false,
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587,
+    "from_email": "kiosk@lab.edu",
+    "alert_emails": [
+      "experimenter@lab.edu"
+    ],
+    "alert_numbers": [
+      "+14105551234"
+    ],
+    "twilio_account_sid": "YOUR_ACCOUNT_SID",
+    "twilio_auth_token": "YOUR_AUTH_TOKEN",
+    "twilio_phone": "+1234567890"
+  }
+}

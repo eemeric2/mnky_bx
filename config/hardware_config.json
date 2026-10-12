@@ -1,0 +1,58 @@
+// mnky_bx/config/hardware_config.json
+{
+  "kiosk_id": "kiosk_001",
+  "platform": "desktop",
+  "input_system": {
+    "enabled_inputs": ["keyboard", "button", "touchscreen"],
+    "arduino": {
+      "port": "COM4",
+      "baud_rate": 115200,
+      "connection_timeout_s": 5,
+      "max_reward_position": 10,
+      "reward_pulse_duration_ms": 500,
+      "retry_attempts": 3,
+      "retry_delay_ms": 500
+    },
+    "touchscreen": {
+      "screen_width": 1920,
+      "screen_height": 1080,
+      "split_screen": true,
+      "debounce_ms": 100,
+      "regions": []
+    },
+    "keyboard": {
+      "enabled": true
+    }
+  },
+  "display": {
+    "width": 1920,
+    "height": 1080,
+    "fullscreen": true,
+    "refresh_rate": 60
+  },
+  "camera": {
+    "index": 0,
+    "width": 640,
+    "height": 480,
+    "fps": 30,
+    "motion_threshold": 5000,
+    "frames_to_stabilize": 30
+  },
+  "storage": {
+    "enable_video_encoding": true,
+    "video_quality": "medium",
+    "video_codec": "h265",
+    "jpeg_quality": 85,
+    "cleanup_old_jpegs_after_days": 7,
+    "max_session_storage_mb": 500
+  },
+  "logging": {
+    "level": "DEBUG",
+    "log_directory": "subjects/"
+  },
+  "notifications": {
+    "enabled": true,
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587
+  }
+}
