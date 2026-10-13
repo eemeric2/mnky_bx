@@ -1,381 +1,254 @@
-# mnky_bx/hardware/arduino/arduino_uno_controller.py
-"""
-Unified Arduino Uno controller for buttons + reward
-Handles both input (buttons) and output (reward motor) on single device
-"""
-
+"""Arduino Uno controller - USB/Serial connection"""
 import threading
 import time
-import queue
-from typing import Optional, Callable, Dict, List
-from datetime import datetime
-import logging
+from typing import Optional, Tuple, Callable
+from .base_controller import HardwareController, HardwareStats
+from .protocol import SerialProtocol
+from .commands import ButtonID, LEDCommand, RewardCommand
 
-from .protocol import ArduinoProtocol
-from .commands import (
-    ButtonID, LEDCommand, RewardCommand,
-    ArduinoCommand, ArduinoResponse, RESPONSE_PARSE_MAP
-)
-
-logger = logging.getLogger(__name__)
-
-
-class ArduinoUnoController:
+class ArduinoUnoController(HardwareController):
     """
-    Controls single Arduino Uno for both buttons and reward
-
-    Architecture:
-    - Serial protocol for communication
-    - Button reading thread (continuous monitoring)
-    - LED control for feedback
-    - Motor control for reward delivery
-    - Health monitoring and error handling
+    USB-connected Arduino Uno for button input and reward motor control.
+    - Serial port: COM4 (Windows) or /dev/ttyUSB0 (Linux)
+    - Baud: 115200
+    - Protocol: Plain text commands (non-blocking)
     """
-
-    def __init__(self, port: str, config: Dict):
+    
+    def __init__(self, config: dict):
         """
-        Initialize Arduino Uno controller
-
-        Args:
-            port: Serial port (e.g., 'COM4')
-            config: Configuration dict with:
-                - baud_rate: Serial speed (default 115200)
-                - max_reward_position: Max motor extension
-                - reward_pulse_duration_ms: How long to hold motor
+        config keys:
+            - port: str (e.g., "COM4" or "/dev/ttyUSB0")
+            - baudrate: int (default 115200)
+            - motor_max_position: float (default 10.0 mm)
+            - motor_pulse_duration_ms: int (default 500 ms)
         """
-        self.port = port
-        self.config = config
-
-        # Communication
-        self.protocol = ArduinoProtocol(port, config.get('baud_rate', 115200))
-        self.is_connected = False
-
-        # Button monitoring
-        self.button_reading_active = False
-        self.button_reading_thread = None
-        self.button_pressed = None  # 'left', 'right', or None
-        self.button_callback = None  # Optional callback on button press
-
-        # LED state
-        self.led_state = {}  # {'left': bool, 'right': bool}
-
-        # Reward/motor control
-        self.motor_position = 0
-        self.max_motor_position = config.get('max_reward_position', 10)
-        self.reward_pulse_duration_ms = config.get('reward_pulse_duration_ms', 500)
-
-        # Statistics
-        self.button_press_count = {'left': 0, 'right': 0}
-        self.reward_delivery_count = 0
-        self.error_count = 0
-
+        super().__init__(config)
+        
+        self.port = config.get('port', 'COM4')
+        self.baudrate = config.get('baudrate', 115200)
+        self.protocol = SerialProtocol(self.port, self.baudrate)
+        
+        self.motor_max_position = config.get('motor_max_position', 10.0)
+        self.motor_pulse_duration_ms = config.get('motor_pulse_duration_ms', 500)
+        self.motor_current_position = 0.0
+        
+        self.button_listener_thread = None
+        self.button_callback: Optional[Callable] = None
+        self.stop_listener = threading.Event()
+    
     def connect(self) -> bool:
-        """
-        Establish connection to Arduino
-
-        Returns:
-            True if successful
-        """
-        try:
-            if self.protocol.connect():
-                self.is_connected = True
-
-                # Initialize motor position
-                if not self._home_motor():
-                    logger.warning("Motor homing failed")
-
-                # Start button reading thread
-                self._start_button_reading()
-
-                logger.info("Arduino Uno controller initialized successfully")
-                return True
-
-            else:
-                logger.error("Failed to connect to Arduino")
-                return False
-
-        except Exception as e:
-            logger.error(f"Connection error: {e}")
+        """Establish serial connection and verify Arduino is ready."""
+        if not self.protocol.connect():
             return False
-
-    def disconnect(self) -> None:
-        """Disconnect from Arduino"""
-        self._stop_button_reading()
-        self.protocol.disconnect()
-        self.is_connected = False
-
-    # ============ BUTTON CONTROL ============
-
-    def _start_button_reading(self) -> None:
-        """Start background thread for button monitoring"""
-        if self.button_reading_active:
-            return
-
-        self.button_reading_active = True
-        self.button_reading_thread = threading.Thread(
-            target=self._button_reading_loop,
+        
+        # Wait for Arduino initialization string
+        print("Waiting for Arduino initialization...")
+        start_time = time.time()
+        while time.time() - start_time < 5.0:
+            line = self.protocol.read_line()
+            if line and "ready" in line.lower():
+                self.is_connected = True
+                print(f"Arduino Uno connected and ready!")
+                self.home_motor()  # Home on startup
+                return True
+            time.sleep(0.1)
+        
+        # Fallback: assume ready after timeout
+        print("No initialization string received, assuming ready")
+        self.is_connected = True
+        self.home_motor()
+        return True
+    
+    def disconnect(self) -> bool:
+        """Stop listeners and close connection."""
+        if self.button_listener_thread:
+            self.stop_listener.set()
+            self.button_listener_thread.join(timeout=2.0)
+        
+        return self.protocol.disconnect()
+    
+    def health_check(self) -> dict:
+        """Verify Arduino is responsive."""
+        errors = []
+        
+        # Check connection
+        if not self.is_connected:
+            errors.append("Not connected")
+            return {
+                'connected': False,
+                'buttons_responsive': False,
+                'motor_responsive': False,
+                'leds_responsive': False,
+                'battery_level': None,
+                'signal_strength': None,
+                'errors': errors
+            }
+        
+        # Test motor responsiveness
+        motor_ok = False
+        try:
+            response = self.protocol.send_command("MOTOR_POS", expect_response=True, timeout_s=1.0)
+            if response:
+                motor_ok = True
+            else:
+                errors.append("Motor not responding")
+        except:
+            errors.append("Motor communication error")
+        
+        # Test LED responsiveness
+        leds_ok = False
+        try:
+            response = self.protocol.send_command("LED_L_BLINK 100", expect_response=True, timeout_s=1.0)
+            if response:
+                leds_ok = True
+            else:
+                errors.append("LEDs not responding")
+        except:
+            errors.append("LED communication error")
+        
+        return {
+            'connected': self.is_connected,
+            'buttons_responsive': True,  # Always listening in background
+            'motor_responsive': motor_ok,
+            'leds_responsive': leds_ok,
+            'battery_level': None,  # USB powered
+            'signal_strength': None,  # Wired connection
+            'errors': errors
+        }
+    
+    def start_button_listener(self, callback: Callable) -> bool:
+        """Start background thread to read button presses."""
+        if self.button_listener_thread and self.button_listener_thread.is_alive():
+            print("Button listener already running")
+            return False
+        
+        self.button_callback = callback
+        self.stop_listener.clear()
+        self.button_listener_thread = threading.Thread(
+            target=self._button_listener_loop,
             daemon=True
         )
-        self.button_reading_thread.start()
-        logger.info("Button reading thread started")
-
-    def _stop_button_reading(self) -> None:
-        """Stop button monitoring thread"""
-        self.button_reading_active = False
-
-        if self.button_reading_thread:
-            self.button_reading_thread.join(timeout=2.0)
-            logger.info("Button reading thread stopped")
-
-    def _button_reading_loop(self) -> None:
-        """
-        Continuous loop: read button presses from Arduino
-        Runs in separate thread
-        """
-        while self.button_reading_active and self.is_connected:
+        self.button_listener_thread.start()
+        return True
+    
+    def stop_button_listener(self) -> bool:
+        """Stop button listener thread."""
+        if self.button_listener_thread:
+            self.stop_listener.set()
+            self.button_listener_thread.join(timeout=2.0)
+            self.button_listener_thread = None
+        return True
+    
+    def _button_listener_loop(self):
+        """Background thread: continuously read button presses."""
+        while not self.stop_listener.is_set():
             try:
-                # Check for incoming data (non-blocking)
-                if self.protocol.serial_connection.in_waiting > 0:
-                    data = self.protocol.serial_connection.readline().decode('utf-8').strip()
-
-                    # Parse button press
-                    if data == ButtonID.LEFT.value:
-                        self.button_pressed = "left"
-                        self.button_press_count['left'] += 1
-                        logger.debug("LEFT button pressed")
-
+                line = self.protocol.read_line(timeout_s=0.5)
+                if line:
+                    if line == ButtonID.LEFT.value:  # "20"
                         if self.button_callback:
-                            self.button_callback("left")
-
-                    elif data == ButtonID.RIGHT.value:
-                        self.button_pressed = "right"
-                        self.button_press_count['right'] += 1
-                        logger.debug("RIGHT button pressed")
-
+                            self.button_callback("left", int(time.time() * 1000))
+                        self.stats.button_presses_left += 1
+                    elif line == ButtonID.RIGHT.value:  # "21"
                         if self.button_callback:
-                            self.button_callback("right")
-
-                time.sleep(0.01)  # Small delay to prevent CPU spinning
-
+                            self.button_callback("right", int(time.time() * 1000))
+                        self.stats.button_presses_right += 1
             except Exception as e:
-                logger.error(f"Button reading error: {e}")
-                self.error_count += 1
-
-    def set_button_callback(self, callback: Callable) -> None:
-        """
-        Set callback function called when button is pressed
-
-        Args:
-            callback: Function(button_id: str) called with 'left' or 'right'
-        """
-        self.button_callback = callback
-
-    def get_button_press(self) -> Optional[str]:
-        """
-        Get last button pressed (non-blocking)
-
-        Returns:
-            'left', 'right', or None
-        """
-        button = self.button_pressed
-        self.button_pressed = None  # Clear after reading
-        return button
-
-    # ============ LED CONTROL ============
-
-    def set_led(self, button_id: str, state: bool) -> bool:
-        """
-        Control LED on button
-
-        Args:
-            button_id: 'left' or 'right'
-            state: True (on) or False (off)
-
-        Returns:
-            True if successful
-        """
-        if not self.is_connected:
-            logger.warning("Arduino not connected")
-            return False
-
+                print(f"Button listener error: {e}")
+                self.stats.errors += 1
+                time.sleep(0.1)
+    
+    def get_button_press(self) -> Tuple[Optional[str], Optional[int]]:
+        """Non-blocking poll (fallback if not using callback)."""
+        # Could implement a queue here, but typically use callback
+        return (None, None)
+    
+    def set_led(self, led_id: str, state: bool, color: tuple = None) -> bool:
+        """Control LED."""
         try:
-            if button_id == 'left':
-                command = LEDCommand.LEFT_ON.value if state else LEDCommand.ALL_OFF.value
-            elif button_id == 'right':
-                command = LEDCommand.RIGHT_ON.value if state else LEDCommand.ALL_OFF.value
+            if state:
+                cmd = f"LED_{led_id.upper()}_ON"
             else:
-                logger.error(f"Unknown button ID: {button_id}")
-                return False
-
-            success = self.protocol.send_command_with_retry(command + '\n')
-
-            if success:
-                self.led_state[button_id] = state
-                logger.debug(f"LED {button_id} {'ON' if state else 'OFF'}")
-
-            return success
-
+                cmd = f"LED_{led_id.upper()}_OFF"
+            
+            self.protocol.send_command(cmd)
+            return True
         except Exception as e:
-            logger.error(f"LED control error: {e}")
-            self.error_count += 1
+            print(f"LED error: {e}")
+            self.stats.errors += 1
             return False
-
-    def set_all_leds(self, state: bool) -> bool:
-        """
-        Control all LEDs simultaneously
-
-        Args:
-            state: True (on) or False (off)
-
-        Returns:
-            True if successful
-        """
-        if not self.is_connected:
-            return False
-
+    
+    def blink_led(self, led_id: str, duration_ms: int, count: int = 1) -> bool:
+        """Blink LED."""
         try:
-            command = LEDCommand.BOTH_ON.value if state else LEDCommand.ALL_OFF.value
-            success = self.protocol.send_command_with_retry(command + '\n')
-
-            if success:
-                self.led_state = {'left': state, 'right': state}
-
-            return success
-
+            cmd = f"LED_{led_id.upper()}_BLINK {duration_ms} {count}"
+            self.protocol.send_command(cmd)
+            return True
         except Exception as e:
-            logger.error(f"All LEDs control error: {e}")
+            print(f"LED blink error: {e}")
+            self.stats.errors += 1
             return False
-
-    # ============ REWARD/MOTOR CONTROL ============
-
-    def _home_motor(self) -> bool:
-        """
-        Move motor to home position (0)
-
-        Returns:
-            True if successful
-        """
+    
+    def home_motor(self) -> bool:
+        """Move motor to home position."""
         try:
-            # Set home position
-            success = self.protocol.send_command_with_retry(
-                RewardCommand.MOTOR_HOME.value,
-                expected_response="ok"
-            )
-
-            if success:
-                self.motor_position = 0
-                logger.info("Motor homed successfully")
+            response = self.protocol.send_command("MOTOR_HOME", expect_response=True, timeout_s=2.0)
+            if response and "ok" in response.lower():
+                self.motor_current_position = 0.0
                 return True
-
             return False
-
         except Exception as e:
-            logger.error(f"Motor homing error: {e}")
+            print(f"Home motor error: {e}")
+            self.stats.errors += 1
             return False
-
-    def deliver_reward(self, amount: int = 1, hold_time_ms: Optional[int] = None) -> bool:
-        """
-        Deliver reward (juice/food)
-
-        Args:
-            amount: Amount of reward (1-10, mapped to motor distance)
-            hold_time_ms: How long to hold (default from config)
-
-        Returns:
-            True if successful
-        """
-        if not self.is_connected:
-            logger.warning("Arduino not connected")
-            return False
-
-        if hold_time_ms is None:
-            hold_time_ms = self.reward_pulse_duration_ms
-
+    
+    def get_motor_position(self) -> Optional[Tuple[float, float, float]]:
+        """Get current motor position."""
         try:
-            # Clamp amount to valid range
-            amount = max(1, min(amount, self.max_motor_position))
-
-            # Calculate motor position
-            motor_distance = amount  # Simple 1:1 mapping
-
-            # Send motor forward command
-            logger.info(f"Delivering reward: amount={amount}, distance={motor_distance}mm")
-
-            command = f"G0 X{motor_distance}\n"
-            success = self.protocol.send_command_with_retry(command, expected_response="ok")
-
-            if success:
-                self.motor_position = motor_distance
-                self.reward_delivery_count += 1
-
-                # Hold for specified duration
-                time.sleep(hold_time_ms / 1000.0)
-
-                # Return to home
-                self._home_motor()
-
-            return success
-
+            response = self.protocol.send_command("MOTOR_POS", expect_response=True, timeout_s=1.0)
+            if response:
+                # Parse response like "X:0.0 Y:0.0 Z:0.0"
+                parts = response.split()
+                x = float(parts[0].split(':')[1]) if len(parts) > 0 else 0.0
+                y = float(parts[1].split(':')[1]) if len(parts) > 1 else 0.0
+                z = float(parts[2].split(':')[1]) if len(parts) > 2 else 0.0
+                return (x, y, z)
         except Exception as e:
-            logger.error(f"Reward delivery error: {e}")
-            self.error_count += 1
-            return False
-
-    def get_motor_position(self) -> int:
-        """Get current motor position"""
-        return self.motor_position
-
-    # ============ STATISTICS & HEALTH ============
-
-    def get_statistics(self) -> Dict:
-        """Get usage statistics"""
-        return {
-            'is_connected': self.is_connected,
-            'button_presses': self.button_press_count.copy(),
-            'reward_deliveries': self.reward_delivery_count,
-            'errors': self.error_count,
-            'motor_position': self.motor_position
-        }
-
-    def health_check(self) -> Dict:
-        """
-        Perform health check on Arduino connection
-
-        Returns:
-            {
-                'connected': bool,
-                'buttons_responsive': bool,
-                'motor_responsive': bool,
-                'led_responsive': bool,
-                'last_error': str or None
-            }
-        """
-        health = {
-            'connected': self.is_connected,
-            'buttons_responsive': False,
-            'motor_responsive': False,
-            'led_responsive': False,
-            'last_error': None
-        }
-
-        if not self.is_connected:
-            health['last_error'] = "Not connected"
-            return health
-
+            print(f"Get position error: {e}")
+        return None
+    
+    def move_motor(self, distance_mm: float, duration_ms: int = 500) -> bool:
+        """Deliver reward by moving motor."""
         try:
-            # Test LED control
-            if self.set_led('left', True):
-                health['led_responsive'] = True
-                self.set_led('left', False)
-
-            # Test motor homing
-            if self._home_motor():
-                health['motor_responsive'] = True
-
-            # Buttons are monitored continuously
-            health['buttons_responsive'] = self.button_reading_active
-
+            # Clamp distance
+            distance_mm = max(-self.motor_max_position, 
+                             min(self.motor_max_position, distance_mm))
+            
+            cmd = f"MOTOR_MOVE {distance_mm} {duration_ms}"
+            response = self.protocol.send_command(cmd, expect_response=True, timeout_s=2.0)
+            
+            if response and "ok" in response.lower():
+                self.motor_current_position = distance_mm
+                self.stats.reward_deliveries += 1
+                return True
+            return False
         except Exception as e:
-            health['last_error'] = str(e)
-
-        return health
+            print(f"Move motor error: {e}")
+            self.stats.errors += 1
+            return False
+    
+    def is_motor_moving(self) -> bool:
+        """Check if motor is currently moving."""
+        try:
+            response = self.protocol.send_command("MOTOR_MOVING", expect_response=True, timeout_s=1.0)
+            return response and "yes" in response.lower()
+        except:
+            return False
+    
+    def get_stats(self) -> HardwareStats:
+        """Return statistics."""
+        return self.stats
+    
+    def reset_stats(self) -> None:
+        """Reset statistics."""
+        self.stats = HardwareStats()

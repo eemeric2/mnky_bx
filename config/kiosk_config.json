@@ -1,36 +1,40 @@
-// mnky_bx/config/kiosk_config.json (UPDATED)
 {
   "kiosk_id": "kiosk_001",
-  "display": {
-    "width": 1920,
-    "height": 1080,
-    "fullscreen": true,
-    "refresh_rate": 60
-  },
   "hardware": {
-    "arduino_buttons_port": "COM3",
-    "arduino_reward_port": "COM4",
-    "camera_index": 0,
-    "motion_detection_timeout_s": 300,
-    "face_detection_timeout_s": 10,
-    "motion_threshold": 5000,
-    "frames_to_stabilize": 30
+    "hardware_type": "auto",
+    "arduino_uno": {
+      "port": "COM4",
+      "baudrate": 115200,
+      "motor_max_position": 10.0,
+      "motor_pulse_duration_ms": 500
+    },
+    "adafruit_feather": {
+      "port": "COM3",
+      "baudrate": 115200,
+      "ble_device_name": "mnky_bx_feather_01",
+      "motor_max_position": 10.0,
+      "motor_pulse_duration_ms": 500,
+      "battery_warning_threshold": 20.0
+    }
   },
-  "storage": {
-    "enable_video_encoding": true,
-    "video_quality": "medium",
-    "video_codec": "h265",
-    "jpeg_quality": 85,
-    "cleanup_old_jpegs_after_days": 7,
-    "max_session_storage_mb": 500
+  "camera": {
+    "device_id": 0,
+    "width": 640,
+    "height": 480,
+    "fps": 30
+  },
+  "display": {
+    "fullscreen": true,
+    "width": 1920,
+    "height": 1080
   },
   "logging": {
-    "level": "DEBUG",
-    "log_directory": "subjects/"
+    "level": "INFO",
+    "log_dir": "logs/"
   },
   "notifications": {
     "enabled": true,
-    "smtp_server": "smtp.gmail.com",
-    "smtp_port": 587
+    "smtp_enabled": true,
+    "sms_enabled": true
   }
 }

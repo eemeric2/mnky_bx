@@ -1,4 +1,3 @@
-// mnky_bx/config/hardware_config.json
 {
   "kiosk_id": "kiosk_001",
   "platform": "desktop",
